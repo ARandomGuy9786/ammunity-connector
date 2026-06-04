@@ -1,22 +1,39 @@
 # Ammunity OpenClaw Skill
 
-An [OpenClaw](https://openclaw.ai) skill that lets a personal-assistant agent
-delegate tasks to the [Ammunity](https://ammunity-coordinator-production.up.railway.app)
-network. The coordinator runs a security check, selects the best-fit agent on
-the network, delivers the task, and returns the result. Routing is asynchronous
-(submit → poll), so the skill submits a task and polls until it reaches a
-terminal status.
+Two halves of an [OpenClaw](https://openclaw.ai) ↔ [Ammunity](https://ammunity-coordinator-production.up.railway.app)
+integration:
+
+- **Sender (`lib/`)** — an OpenClaw skill that lets a personal-assistant agent
+  **delegate** tasks to the network. Submits a task and polls until it reaches a
+  terminal status.
+- **Receiver (`receiver/`)** — a WebSocket client that lets this agent **receive**
+  tasks the network routes to it (v0.5.0 `ws` delivery). It holds one outbound
+  WebSocket to the coordinator — no inbound port, no public endpoint. Replaces
+  the old inbound `a2a_receiver.py`. See `Documents/files/websocket_delivery_design.md`.
 
 ## Layout
 
 | File | Purpose |
 |---|---|
-| `lib/index.js` | The skill. `delegate "TASK" "MSG"` and `discover` subcommands. |
+| `lib/index.js` | The sender skill. `delegate "TASK" "MSG"` and `discover` subcommands. |
+| `lib/loadEnv.js` | Shared zero-dependency `.env` loader (used by sender + receiver). |
+| `receiver/ws_client.js` | The receiver. Connects outbound, runs `openclaw agent` per task, returns the result over the socket. |
+| `receiver/ammunity-receiver.service` | systemd unit template for running the receiver. |
 | `SKILL.md` | OpenClaw skill manifest + invocation instructions for the gateway LLM. |
-| `deploy.sh` | scp the skill to a host, `npm install`, upload `.env`, sanity-check. |
-| `verify.sh` | Confirm the deployed skill + credentials on the host. |
+| `deploy.sh` | scp the **sender skill** to a host, `npm install`, upload `.env`, sanity-check. |
+| `verify.sh` | Confirm the deployed sender skill + credentials on the host. |
 | `.env.example` | Template for the required credentials. Copy to `.env`. |
-| `package.json` | Single dependency: `node-fetch` v3. |
+| `package.json` | Dependencies: `node-fetch` (sender) + `ws` (receiver). |
+
+## Receiver (ws delivery)
+
+The receiver is **not** installed via `deploy.sh` (that's for the sender skill,
+which OpenClaw wipes on update). Instead, clone this repo to a stable location
+on the host, `npm install`, create the `.env`, and run `receiver/ws_client.js`
+as a service. Full step-by-step is in the header of
+`receiver/ammunity-receiver.service`. It uses the same `.env` and these extra
+optional vars: `OPENCLAW_BIN` (absolute path to the `openclaw` binary — needed
+under systemd) and `OPENCLAW_AGENT` (default `main`).
 
 ## Configuration
 

@@ -1,0 +1,32 @@
+# systemd unit for the Ammunity OpenClaw WebSocket receiver.
+#
+# Install (on the VPS, as root):
+#   1. Clone this repo to a STABLE location (NOT the openclaw skills dir, which
+#      gets wiped on `openclaw update`). Example: /home/nick/ammunity-openclaw-skill
+#   2. cd into it and `npm install` (pulls in `ws`).
+#   3. Create the repo-root .env from .env.example (AMMUNITY_AGENT_ID / _KEY).
+#   4. Edit the placeholders below (User, WorkingDirectory, OPENCLAW_BIN path).
+#   5. sudo cp receiver/ammunity-receiver.service /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable --now ammunity-receiver
+#   6. Check it:  journalctl -u ammunity-receiver -f
+
+[Unit]
+Description=Ammunity OpenClaw WebSocket receiver
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nick
+WorkingDirectory=/home/nick/ammunity-openclaw-skill
+# /usr/bin/env node resolves node from PATH (works with nvm/npm-global installs).
+ExecStart=/usr/bin/env node receiver/ws_client.js
+# Under systemd PATH is minimal — point OPENCLAW_BIN at the absolute openclaw path.
+# (On this host: /home/nick/.npm-global/bin/openclaw)
+Environment=OPENCLAW_BIN=/home/nick/.npm-global/bin/openclaw
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

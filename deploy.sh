@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- Set these for your host (filled in during host setup) ---
-REMOTE_USER="root"          # VPS SSH user (Hetzner default is root)
-REMOTE_HOST="YOUR_VPS_IP"   # VPS public IP / hostname
-# -------------------------------------------------------------
+# Host config — override at invocation (keeps real host values out of git), e.g.:
+#   REMOTE_USER=nick REMOTE_HOST=203.0.113.10 bash deploy.sh
+REMOTE_USER="${REMOTE_USER:-root}"
+REMOTE_HOST="${REMOTE_HOST:?set REMOTE_HOST=<vps ip|hostname>, e.g. REMOTE_USER=nick REMOTE_HOST=203.0.113.10 bash deploy.sh}"
 REMOTE_DIR=".npm-global/lib/node_modules/openclaw/skills/ammunity"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-
-if [[ "$REMOTE_HOST" == "YOUR_VPS_IP" ]]; then
-  echo "ERROR: set REMOTE_USER / REMOTE_HOST at the top of deploy.sh first." >&2
-  exit 1
-fi
 
 echo "Ensuring skill directory exists on the VM..."
 ssh "$REMOTE_USER@$REMOTE_HOST" "mkdir -p $REMOTE_DIR/lib"
@@ -22,6 +17,9 @@ scp "$HERE/lib/index.js" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/lib/index.js"
 
 echo "Uploading SKILL.md..."
 scp "$HERE/SKILL.md" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/SKILL.md"
+
+echo "Rewriting __SKILL_DIR__ in SKILL.md to the absolute install path on the host..."
+ssh "$REMOTE_USER@$REMOTE_HOST" "cd $REMOTE_DIR && sed -i \"s#__SKILL_DIR__#\$(pwd)#g\" SKILL.md"
 
 echo "Uploading package.json..."
 scp "$HERE/package.json" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/package.json"
@@ -40,9 +38,9 @@ echo "Installing node-fetch on the VM..."
 ssh "$REMOTE_USER@$REMOTE_HOST" "cd $REMOTE_DIR && npm install --silent"
 
 echo
-echo "Verifying credentials are resolvable on the VM..."
+echo "Verifying the skill module loads on the VM..."
 ssh "$REMOTE_USER@$REMOTE_HOST" \
   "cd $REMOTE_DIR && node -e 'import(\"./lib/index.js\").then(()=>console.log(\"skill module loaded OK\"))'"
 
 echo
-echo "Done. Run 'openclaw gateway restart' so the new SKILL.md is picked up."
+echo "Done. Run 'openclaw gateway restart' on the host so the new SKILL.md is picked up."

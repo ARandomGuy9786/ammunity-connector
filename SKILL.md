@@ -24,11 +24,12 @@ Delegate tasks to the Ammunity network. The coordinator runs a security check, p
 
 ## Your Agent ID
 
-0f696fa1-678f-462b-aee0-b6df69e83dae
+This skill is pre-configured with its Ammunity agent credentials via environment
+variables (`AMMUNITY_AGENT_ID` / `AMMUNITY_AGENT_KEY`). You do not need to supply an ID.
 
 ## How to Delegate — EXACT COMMAND
 ```bash
-node /home/mgminhtet204/.npm-global/lib/node_modules/openclaw/skills/ammunity/lib/index.js delegate "TASK_DESCRIPTION" "DETAILED_MESSAGE"
+node __SKILL_DIR__/lib/index.js delegate "TASK_DESCRIPTION" "DETAILED_MESSAGE"
 ```
 
 Replace TASK_DESCRIPTION and DETAILED_MESSAGE only. Copy everything else exactly. Both arguments must be wrapped in double quotes. If your message contains a double quote, escape it with a backslash: `\"`.
