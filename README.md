@@ -19,8 +19,9 @@ integration:
 | `lib/loadEnv.js` | Shared zero-dependency `.env` loader (used by sender + receiver). |
 | `receiver/ws_client.js` | The receiver. Connects outbound, runs `openclaw agent` per task, returns the result over the socket. |
 | `receiver/ammunity-receiver.service` | systemd unit template for running the receiver. |
-| `SKILL.md` | OpenClaw skill manifest + invocation instructions for the gateway LLM. |
-| `deploy.sh` | scp the **sender skill** to a host, `npm install`, upload `.env`, sanity-check. |
+| `SKILL.md` | OpenClaw skill manifest. Tells the gateway LLM to run the `ammunity` command. |
+| `install.sh` | **One-step sender install (run on the host):** registers `SKILL.md` with OpenClaw and creates the `ammunity` command on PATH. |
+| `deploy.sh` | Alternative: scp the sender skill from your Mac to a host. (Prefer `install.sh` run on the host — it also sets up the `ammunity` command.) |
 | `verify.sh` | Confirm the deployed sender skill + credentials on the host. |
 | `.env.example` | Template for the required credentials. Copy to `.env`. |
 | `package.json` | Dependencies: `node-fetch` (sender) + `ws` (receiver). |
@@ -68,21 +69,42 @@ node lib/index.js discover
 If credentials are missing the skill exits with a clear error naming the
 missing variable(s).
 
-## Deploying to a host
+## Install the sender skill (on the host)
 
-1. Set `REMOTE_USER` / `REMOTE_HOST` at the top of `deploy.sh` and `verify.sh`.
-2. Set the install path in `SKILL.md`'s "How to Delegate" block to match where
-   OpenClaw installs skills for your host user.
-3. `bash deploy.sh`
-4. `openclaw gateway restart` on the host so the new `SKILL.md` is picked up
-   (the gateway caches it at startup).
-5. `bash verify.sh` to confirm.
+Clone the repo to a stable location, set the `.env`, and run `install.sh`:
+
+```bash
+git clone https://github.com/ARandomGuy9786/OpenclawSkill.git ammunity-openclaw-skill
+cd ammunity-openclaw-skill
+cp .env.example .env          # fill in AMMUNITY_AGENT_ID / AMMUNITY_AGENT_KEY
+bash install.sh               # registers SKILL.md + creates the `ammunity` command (uses sudo for /usr/local/bin)
+```
+
+`install.sh` registers the manifest with OpenClaw and creates an **`ammunity`
+command** on PATH that the chat agent runs to delegate a task. The command
+points at this clone (not the npm skills dir, which `openclaw update` wipes), so
+it survives updates. Verify:
+
+```bash
+ammunity "Test" "Say hello in one short sentence."   # should print a result in ~15-30s
+```
+
+Then **reload the gateway** (or just start a new chat) so OpenClaw re-reads the
+skill — note there is no `openclaw gateway restart` subcommand on current builds;
+use `openclaw status` to see how your gateway runs and restart it accordingly.
+
+## How the chat agent uses it
+
+The agent runs the `ammunity` command (e.g. `ammunity "Research request" "…"`),
+which delegates to the network and prints the result. Giving the skill a real
+command name is deliberate: the chat model reliably runs `ammunity …` but would
+not reliably type a long `node /path/index.js delegate …` invocation.
 
 ## Notes
 
-- OpenClaw wipes the skill folder (including `.env`) on `openclaw update`.
-  `deploy.sh` is the rebuild tool. Publishing to ClawHub is the planned
-  permanent fix — this credential-free layout is the prerequisite for that.
+- OpenClaw wipes the npm skills folder on `openclaw update`, but the `ammunity`
+  command points at your clone, so re-running `install.sh` (or just `git pull`)
+  is enough to restore it. Publishing to ClawHub is the planned permanent fix.
 - The skill calls `process.exit(0)` on success: node-fetch's keep-alive agent
   would otherwise hold the event loop open and OpenClaw would see the command
   as still running.
