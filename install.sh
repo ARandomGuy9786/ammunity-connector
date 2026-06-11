@@ -10,16 +10,20 @@
 #
 # What it does:
 #   1. Ensures this clone has its dependencies + .env (the clone is the runtime home).
-#   2. Copies SKILL.md (+ lib) into OpenClaw's skills dir so OpenClaw discovers it.
+#   2. Registers SKILL.md with OpenClaw. On OpenClaw >= 2026.5.28 this uses the
+#      MANAGED skills dir (~/.openclaw/skills) which SURVIVES `openclaw update`.
+#      On older OpenClaw (whose `skills install` only accepts ClawHub slugs) it
+#      falls back to the bundled package dir, which `openclaw update` WIPES.
 #   3. Creates an `ammunity` command on PATH that runs the delegate CLI.
 #
-# The `ammunity` command is what the OpenClaw chat agent runs to delegate a task.
-# It points at THIS clone (not the npm skills dir, which `openclaw update` wipes),
-# so it keeps working across OpenClaw updates.
+# The `ammunity` command points at THIS clone (via /usr/local/bin), so it always
+# survives `openclaw update`. Only the SKILL.md manifest is at risk on older
+# OpenClaw — re-run this installer after an update, or upgrade to 2026.5.28+.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 WRAPPER="${AMMUNITY_WRAPPER_PATH:-/usr/local/bin/ammunity}"
+OPENCLAW="${OPENCLAW_BIN:-openclaw}"
 
 # 1. Runtime home = this clone: dependencies + credentials.
 if [ ! -d "$HERE/node_modules" ]; then
@@ -31,13 +35,34 @@ if [ ! -f "$HERE/.env" ]; then
   echo "         AMMUNITY_AGENT_ID / AMMUNITY_AGENT_KEY before delegating."
 fi
 
-# 2. Register the skill with OpenClaw (it discovers skills by their SKILL.md).
-SKILL_DIR="$(npm root -g)/openclaw/skills/ammunity"
-echo "Installing skill manifest into $SKILL_DIR ..."
-mkdir -p "$SKILL_DIR/lib"
-cp "$HERE/SKILL.md" "$SKILL_DIR/SKILL.md"
-cp "$HERE/lib/index.js" "$HERE/lib/loadEnv.js" "$SKILL_DIR/lib/"
-cp "$HERE/package.json" "$SKILL_DIR/package.json"
+# 2. Register the skill with OpenClaw.
+if ! command -v "$OPENCLAW" >/dev/null 2>&1; then
+  echo "ERROR: '$OPENCLAW' not found on PATH. Set OPENCLAW_BIN=/path/to/openclaw and re-run." >&2
+  exit 1
+fi
+# Newer OpenClaw (>= 2026.5.28) can install a LOCAL skill dir into the managed
+# skills dir (~/.openclaw/skills), which persists across `openclaw update`. We
+# stage a CLEAN copy of just SKILL.md, because `openclaw skills install` runs a
+# security scan that rejects directories containing shell-spawn code (e.g. the
+# receiver's child_process use), and the skill only needs SKILL.md (it just tells
+# the agent to run the `ammunity` command from step 3). We detect support via --global.
+if "$OPENCLAW" skills install --help 2>&1 | grep -q -- "--global"; then
+  STAGE="$(mktemp -d)"
+  cp "$HERE/SKILL.md" "$STAGE/SKILL.md"
+  echo "Installing the 'ammunity' skill into OpenClaw's managed skills dir (survives openclaw update)..."
+  "$OPENCLAW" skills install "$STAGE" --as ammunity --global --force
+  rm -rf "$STAGE"
+  SKILL_LOC="managed dir (~/.openclaw/skills/ammunity) — survives openclaw update"
+else
+  SKILL_DIR="$(npm root -g)/openclaw/skills/ammunity"
+  echo "NOTE: this OpenClaw is older; its 'skills install' only supports ClawHub slugs."
+  echo "      Installing SKILL.md into the bundled dir: $SKILL_DIR"
+  echo "      WARNING: 'openclaw update' will WIPE this. Re-run install.sh after an update,"
+  echo "      or upgrade OpenClaw to 2026.5.28+ for a persistent (managed-dir) install."
+  mkdir -p "$SKILL_DIR"
+  cp "$HERE/SKILL.md" "$SKILL_DIR/SKILL.md"
+  SKILL_LOC="bundled dir ($SKILL_DIR) — WILL be wiped by 'openclaw update'"
+fi
 
 # 3. Create the `ammunity` command on PATH, pointing at this clone's CLI.
 #    /usr/local/bin is on the gateway's PATH whether it runs as a service or a
@@ -54,8 +79,8 @@ $SUDO chmod +x "$WRAPPER"
 
 echo
 echo "Done."
-echo "  manifest : $SKILL_DIR/SKILL.md"
+echo "  skill    : $SKILL_LOC"
 echo "  command  : $WRAPPER  ->  node $HERE/lib/index.js delegate"
 echo
 echo "Test it:   ammunity \"Test\" \"Say hello in one short sentence.\""
-echo "Then reload the OpenClaw gateway (or start a new chat) so it re-reads the skill."
+echo "Then start a new chat (or reload the gateway) so OpenClaw re-reads the skill."
