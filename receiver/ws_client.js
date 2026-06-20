@@ -103,6 +103,46 @@ function extractText(stdout) {
   }
 }
 
+// Build the brain prompt: the task, plus — on re-delivery — the prior Q&A as
+// context, plus the tiny always-on action-contract that teaches the `ASK:`
+// convention. Kept short on purpose (progressive disclosure — SYNC-1 principle 7).
+function buildPrompt(msg, isRedelivery) {
+  const task = `${msg.task_description || ""}. ${msg.payload?.message || ""}`.trim();
+  const rounds = Array.isArray(msg.context?.rounds) ? msg.context.rounds : [];
+
+  if (isRedelivery) {
+    const qa = rounds
+      .filter((r) => r && r.answer != null)
+      .map((r) => `You asked: "${r.question}"\nThe requester answered: "${r.answer}"`)
+      .join("\n\n");
+    return (
+      `${task}\n\n` +
+      `Earlier you needed more information to do this.\n${qa}\n\n` +
+      `Now complete the original task using that answer. ` +
+      `Do not ask any more questions — give your best result.`
+    );
+  }
+
+  return (
+    `${task}\n\n` +
+    `If — and only if — you genuinely cannot complete this without ONE specific ` +
+    `missing detail, reply with exactly one line:\n` +
+    `ASK: <your single question>\n` +
+    `and nothing else. Otherwise, just complete the task and reply with the result.`
+  );
+}
+
+// First-line-only `ASK:` detection (SYNC-1 §8.2). Returns the question, or null
+// if the reply is a normal (DONE) result.
+function parseAsk(text) {
+  const firstLine = String(text == null ? "" : text)
+    .replace(/^\s+/, "")
+    .split(/\r?\n/, 1)[0]
+    .trim();
+  const m = /^ASK:\s*(.+)$/i.exec(firstLine);
+  return m ? m[1].trim() : null;
+}
+
 let ws = null;
 let heartbeat = null;
 let reconnectDelay = RECONNECT_BASE_MS;
@@ -198,15 +238,28 @@ function connect() {
     if (msg.type !== "task") return;
 
     const taskId = msg.task_id;
-    const prompt = `${msg.task_description || ""}. ${msg.payload?.message || ""}`.trim();
-    log(`task ${taskId}: running openclaw`);
+    const isRedelivery =
+      Array.isArray(msg.context?.rounds) && msg.context.rounds.length > 0;
+    const prompt = buildPrompt(msg, isRedelivery);
+    log(`task ${taskId}: running openclaw${isRedelivery ? " (with answer)" : ""}`);
     const res = await runOpenClaw(prompt);
-    if (res.ok) {
-      send({ type: "result", task_id: taskId, status: "completed", result: res.text });
-      log(`task ${taskId}: completed`);
-    } else {
-      send({ type: "result", task_id: taskId, status: "failed", error: res.error });
+
+    if (!res.ok) {
+      send({ protocol: "ammunity", v: 1, type: "result", task_id: taskId, status: "failed", error: res.error });
       log(`task ${taskId}: failed — ${res.error}`);
+      return;
+    }
+
+    // First delivery only: the brain may ask ONE clarifying question via a leading
+    // `ASK:` line. On re-delivery it already has the answer, so we never parse for
+    // a question (Tier-1 one-round cap — SYNC-1).
+    const question = isRedelivery ? null : parseAsk(res.text);
+    if (question) {
+      send({ protocol: "ammunity", v: 1, type: "ask", task_id: taskId, question });
+      log(`task ${taskId}: asked for clarification`);
+    } else {
+      send({ protocol: "ammunity", v: 1, type: "result", task_id: taskId, status: "completed", result: res.text });
+      log(`task ${taskId}: completed`);
     }
   });
 

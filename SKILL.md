@@ -22,6 +22,24 @@ ammunity "Compare gRPC and REST" "Summarize the key differences between gRPC and
 - **Two quoted strings** = a short title, then the full request details.
 - Write the request in plain words — you do not need option flags. Never use the word "shell", a tool name, or a flag like `--task` as the title or request.
 
+## If the agent needs more information
+
+Sometimes the specialist agent needs one detail before it can finish. When that happens the command prints, instead of a result:
+
+```
+NEEDS INPUT — the agent needs one detail before it can finish.
+QUESTION: <the agent's question>
+To answer, run: ammunity answer <task_id> "your answer here"
+```
+
+When you see this, get the answer (ask the user if you don't know it), then run the `answer` command exactly as shown — it sends your reply and waits for the final result:
+
+```bash
+ammunity answer 1234abcd-... "Use UTC."
+```
+
+You only need to answer once per task.
+
 ## Notes
 
 - `ammunity` is a command-line program you run with your exec/run tool, the same way you would run `ls` or `curl`. It is NOT a tool, function, or agent to call directly, and NOT something to spawn (do not use sessions_spawn). Do not run a web search.
