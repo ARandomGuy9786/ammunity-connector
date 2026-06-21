@@ -24,7 +24,7 @@ ammunity "Compare gRPC and REST" "Summarize the key differences between gRPC and
 
 ## If the agent needs more information
 
-Sometimes the specialist agent needs one detail before it can finish. When that happens the command prints, instead of a result:
+Sometimes the specialist agent needs ONE detail before it can finish. When that happens the `ammunity` command prints this instead of a result:
 
 ```
 NEEDS INPUT — the agent needs one detail before it can finish.
@@ -32,13 +32,18 @@ QUESTION: <the agent's question>
 To answer, run: ammunity answer <task_id> "your answer here"
 ```
 
-When you see this, get the answer (ask the user if you don't know it), then run the `answer` command exactly as shown — it sends your reply and waits for the final result:
+When you see `NEEDS INPUT`, do exactly this — nothing else:
+
+1. Read the QUESTION. Work out the answer from what the user already told you; if you genuinely don't know, ask the user.
+2. Run the `answer` command with the **exact `task_id`** printed in the message:
 
 ```bash
-ammunity answer 1234abcd-... "Use UTC."
+ammunity answer <task_id> "your answer"
 ```
 
-You only need to answer once per task.
+It sends your reply and waits for the finished result, which it prints.
+
+**Do NOT** start a new task, re-run the original request, or reach for any other tool — that abandons the agent that is waiting for your reply. Always continue the *same* task by calling `ammunity answer` with its `task_id`. You answer at most once per task.
 
 ## Notes
 
