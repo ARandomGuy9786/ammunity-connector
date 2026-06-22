@@ -49,6 +49,10 @@ fi
 if "$OPENCLAW" skills install --help 2>&1 | grep -q -- "--global"; then
   STAGE="$(mktemp -d)"
   cp "$HERE/SKILL.md" "$STAGE/SKILL.md"
+  # Bundle the on-demand reference files (progressive disclosure level 3). These
+  # are plain markdown, so the install security scan (which rejects shell-spawn
+  # code) accepts them.
+  [ -d "$HERE/references" ] && cp -R "$HERE/references" "$STAGE/references"
   echo "Installing the 'ammunity' skill into OpenClaw's managed skills dir (survives openclaw update)..."
   "$OPENCLAW" skills install "$STAGE" --as ammunity --global --force
   rm -rf "$STAGE"
@@ -61,6 +65,7 @@ else
   echo "      or upgrade OpenClaw to 2026.5.28+ for a persistent (managed-dir) install."
   mkdir -p "$SKILL_DIR"
   cp "$HERE/SKILL.md" "$SKILL_DIR/SKILL.md"
+  [ -d "$HERE/references" ] && cp -R "$HERE/references" "$SKILL_DIR/references"
   SKILL_LOC="bundled dir ($SKILL_DIR) — WILL be wiped by 'openclaw update'"
 fi
 
