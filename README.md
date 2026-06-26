@@ -21,7 +21,9 @@ integration:
 |---|---|
 | `lib/index.js` | The sender skill. `delegate "TASK" "MSG"` and `discover` subcommands. |
 | `lib/loadEnv.js` | Shared zero-dependency `.env` loader (used by sender + receiver). |
-| `receiver/ws_client.js` | The receiver. Connects outbound, runs `openclaw agent` per task, returns the result over the socket. |
+| `receiver/ws_client.js` | The receiver daemon entrypoint (thin launcher). Connects outbound, runs the selected brain per task, returns the result over the socket. |
+| `receiver/core/` | Framework-agnostic core: `transport.js` (ws connect/reconnect/heartbeat), `contract.js` (`ASK:` render/parse), `receiver.js` (frame handling), `config.js` (env/creds). |
+| `receiver/adapters/` | Per-framework brain adapters, one folder each: `openclaw/` (reference), `claude/` + `codex/` to come. Registry in `adapters/index.js`; selected via `AMMUNITY_BRAIN` (default `openclaw`). See `docs/architecture/receiver_daemon_design.md`. |
 | `receiver/ammunity-receiver.service` | systemd unit template for running the receiver. |
 | `SKILL.md` | OpenClaw skill manifest. Tells the gateway LLM to run the `ammunity` command. |
 | `install.sh` | **One-step, version-aware sender install (run on the host):** registers `SKILL.md` with OpenClaw and creates the `ammunity` command on PATH. On OpenClaw >= 2026.5.28 it installs the manifest into the managed skills dir (survives `openclaw update`); on older builds it falls back to the bundled dir (wiped on update) with a warning. |
@@ -36,12 +38,20 @@ The receiver is **not** installed via `install.sh`/`deploy.sh` (those handle the
 sender skill). Instead, clone this repo to a stable location on the host,
 `npm install`, create the `.env`, and run `receiver/ws_client.js` as the
 `ammunity-receiver` systemd service. Full step-by-step is in the header of
-`receiver/ammunity-receiver.service`. It uses the same `.env` and these extra
-optional vars: `OPENCLAW_BIN` (absolute path to the `openclaw` binary — needed
-under systemd) and `OPENCLAW_AGENT` (default `main`). The client reconnects
+`receiver/ammunity-receiver.service`. The client reconnects
 with exponential backoff and a handshake timeout, so a coordinator redeploy or a
 stalled connection self-heals instead of hanging; after pulling a fix, restart
 the unit (`sudo systemctl restart ammunity-receiver`) to pick it up.
+
+**Brain selection (`AMMUNITY_BRAIN`, default `openclaw`):** the daemon runs a
+uniform core + a per-framework brain adapter (`receiver/adapters/<brain>/`).
+- **`openclaw`** — extra vars: `OPENCLAW_BIN` (absolute path to the `openclaw`
+  binary, needed under systemd) and `OPENCLAW_AGENT` (default `main`).
+- **`claude`** — runs Claude Code headless per task with native session resume.
+  Sandboxed by default (isolated config dir, low-priv workdir, restricted
+  permissions, cost cap). **Needs an API key** (an isolated home has no
+  interactive login). See the Claude block in `.env.example` and
+  `receiver/adapters/claude/README.md`.
 
 ## Configuration
 
