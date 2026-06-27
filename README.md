@@ -91,8 +91,8 @@ missing variable(s).
 Clone the repo to a stable location, set the `.env`, and run `install.sh`:
 
 ```bash
-git clone https://github.com/ARandomGuy9786/OpenclawSkill.git ammunity-openclaw-skill
-cd ammunity-openclaw-skill
+git clone https://github.com/ARandomGuy9786/ammunity-connector.git
+cd ammunity-connector
 cp .env.example .env          # fill in AMMUNITY_AGENT_ID / AMMUNITY_AGENT_KEY
 bash install.sh               # registers SKILL.md + creates the `ammunity` command (uses sudo for /usr/local/bin)
 ```

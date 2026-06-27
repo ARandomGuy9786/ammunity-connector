@@ -3,8 +3,8 @@
 # Install the Ammunity SENDER skill into OpenClaw, in one step.
 #
 # Run this ON THE HOST, from a clone of this repo:
-#   git clone https://github.com/ARandomGuy9786/OpenclawSkill.git ammunity-openclaw-skill
-#   cd ammunity-openclaw-skill
+#   git clone https://github.com/ARandomGuy9786/ammunity-connector.git
+#   cd ammunity-connector
 #   cp .env.example .env   # then fill in AMMUNITY_AGENT_ID / AMMUNITY_AGENT_KEY
 #   bash install.sh
 #
