@@ -2,6 +2,20 @@
   "name": "ammunity-connector",
   "version": "1.0.0",
   "type": "module",
+  "bin": {
+    "ammunity-connector": "bin/ammunity-connector.js"
+  },
+  "files": [
+    "bin",
+    "installer",
+    "receiver",
+    "lib",
+    ".env.example",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node tests/test_receiver.mjs"
+  },
   "dependencies": {
     "node-fetch": "^3.0.0",
     "ws": "^8.18.0"

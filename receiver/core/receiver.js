@@ -19,11 +19,16 @@
  * The one-round Tier-1 cap is enforced here (no ASK parse on a re-delivery) and
  * in the coordinator (defence in depth — SYNC-1).
  *
+ * STEP 3 (carried `receiver_session_ref`) — BUILT (connector half, 2026-06-30):
+ *   - The fresh turn captures the brain's native session ref (adapter `run()`
+ *     result) and the `ask` frame carries it top-level as `receiver_session_ref`.
+ *   - The coordinator stashes it (clarification JSONB) and echoes it on the answer
+ *     re-delivery as `context.receiver_session_ref` (coordinator half live, v0.5.4).
+ *   - The answer turn resumes that ref in preference to the in-process `task_id`,
+ *     so resume now survives a daemon restart (and the ref is in the audit log).
+ *   - Fully back-compatible: replay brains (OpenClaw) emit no ref → replay as before.
+ *
  * NOT YET BUILT (flagged for next sessions — design §4 full form):
- *   - The carried `receiver_session_ref` echoed by the coordinator (step 3) — so
- *     resume survives a daemon restart and the ref is in the audit log. Today the
- *     daemon resumes by `task_id` within its own process lifetime; a restart
- *     mid-clarification degrades to the replay fallback.
  *   - The correlation Map + per-key lock — needed for Codex (captured, not
  *     pre-assigned, session ids) and for Tier-2 concurrent turns. Tier-1 can't
  *     have two concurrent turns on one task (it parks on needs_input), so the
@@ -70,9 +75,15 @@ export class Receiver {
       });
     } else if (resumeCapable) {
       // Continuation via native resume, with replay as the universal fallback.
-      this.log(`task ${taskId}: resuming ${this.adapter.name} (with answer)`);
+      // Step 3: prefer the coordinator-echoed `context.receiver_session_ref` over
+      // the in-process `task_id`, so resume survives a daemon restart (the ref is
+      // the brain's real native session id, captured on the fresh turn and stashed
+      // by the coordinator). Falls back to `task_id` for same-process resumes and
+      // for the pre-assigned-id brains where the two coincide (Claude).
+      const resumeRef = msg.context?.receiver_session_ref || taskId;
+      this.log(`task ${taskId}: resuming ${this.adapter.name} (ref ${resumeRef})`);
       try {
-        res = await this.adapter.resume(taskId, renderAnswerTurn(msg), {});
+        res = await this.adapter.resume(resumeRef, renderAnswerTurn(msg), {});
       } catch (e) {
         this.log(`task ${taskId}: resume unavailable (${e.message}); replaying`);
         res = await this.adapter.run(renderReplay(msg), {});
@@ -96,7 +107,19 @@ export class Receiver {
     const question = isRedelivery ? null : parseAsk(res.text);
     if (question) {
       // Not terminal — keep the session alive for the answer turn.
-      this.send(taskId, { type: "ask", question });
+      // Step 3: tag the ask with the brain's native session ref so the coordinator
+      // can echo it back on the answer re-delivery (`context.receiver_session_ref`)
+      // and we resume the SAME session — even across a daemon restart. Resume-only
+      // brains return a ref from run(); for the pre-assigned-id case it equals the
+      // task_id. Replay brains (OpenClaw) return none → field omitted → coordinator
+      // stores nothing → resume harmlessly falls back to replay. (router.py reads
+      // this as a TOP-LEVEL field on the ask frame.)
+      const sessionRef = res.sessionRef || (resumeCapable ? taskId : null);
+      this.send(taskId, {
+        type: "ask",
+        question,
+        ...(sessionRef ? { receiver_session_ref: sessionRef } : {}),
+      });
       this.log(`task ${taskId}: asked for clarification`);
     } else {
       this.send(taskId, { type: "result", status: "completed", result: res.text });
