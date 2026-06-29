@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Host config — override at invocation (same values as deploy.sh), e.g.:
-#   REMOTE_USER=nick REMOTE_HOST=203.0.113.10 bash verify.sh
+#   REMOTE_USER=youruser REMOTE_HOST=203.0.113.10 bash verify.sh
 REMOTE_USER="${REMOTE_USER:-root}"
-REMOTE_HOST="${REMOTE_HOST:?set REMOTE_HOST=<vps ip|hostname>, e.g. REMOTE_USER=nick REMOTE_HOST=203.0.113.10 bash verify.sh}"
+REMOTE_HOST="${REMOTE_HOST:?set REMOTE_HOST=<vps ip|hostname>, e.g. REMOTE_USER=youruser REMOTE_HOST=203.0.113.10 bash verify.sh}"
 REMOTE_DIR=".npm-global/lib/node_modules/openclaw/skills/ammunity"
 
 echo "=== .env present on the VM (credentials, not echoed) ==="

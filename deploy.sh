@@ -8,9 +8,9 @@ set -euo pipefail
 # clone on the host.
 
 # Host config — override at invocation (keeps real host values out of git), e.g.:
-#   REMOTE_USER=nick REMOTE_HOST=203.0.113.10 bash deploy.sh
+#   REMOTE_USER=youruser REMOTE_HOST=203.0.113.10 bash deploy.sh
 REMOTE_USER="${REMOTE_USER:-root}"
-REMOTE_HOST="${REMOTE_HOST:?set REMOTE_HOST=<vps ip|hostname>, e.g. REMOTE_USER=nick REMOTE_HOST=203.0.113.10 bash deploy.sh}"
+REMOTE_HOST="${REMOTE_HOST:?set REMOTE_HOST=<vps ip|hostname>, e.g. REMOTE_USER=youruser REMOTE_HOST=203.0.113.10 bash deploy.sh}"
 REMOTE_DIR=".npm-global/lib/node_modules/openclaw/skills/ammunity"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
