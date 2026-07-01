@@ -5,15 +5,17 @@
  *
  * One interactive installer, branches on role (send / receive / both):
  *   - receive: places the uniform receiver daemon in a stable home, installs
- *     deps, writes an isolated .env (chmod 600). Per-OS service generation
- *     (systemd/launchd) lands in the next batch (piece D); until then it prints
- *     the run command (or `--start` runs it in the foreground).
+ *     deps, writes an isolated .env (chmod 600), then GENERATES + installs +
+ *     starts a per-OS service (systemd --user on Linux, a launchd LaunchAgent
+ *     on macOS) so it survives reboots. Falls back to printing the manual run
+ *     command if the service can't be installed (unsupported OS, no
+ *     systemd/launchctl, etc).
  *   - send: prints the MCP-add snippet (full multi-platform issuer = the
  *     dashboard Connect panel / piece E).
  *
  * Security posture (design §6.2): interactive HIDDEN credential entry — no
  * secret in the URL, the command, or shell history. Service files are GENERATED
- * per-host, never shipped (the 2026-06-29 leak). This is piece A+B+C of
+ * per-host, never shipped (the 2026-06-29 leak). This is piece A+B+C+D of
  * agent_install.md §6.1.
  */
 
@@ -23,6 +25,7 @@ import { spawn } from "node:child_process";
 import { ask, askHidden, askSelect, confirm, readStdinLine } from "../installer/prompts.js";
 import { preflight, hasClaudeLogin } from "../installer/system.js";
 import { defaultHome, placeRuntime, installDeps, writeEnv } from "../installer/runtime.js";
+import { installService, uninstallService } from "../installer/service.js";
 
 const VERSION = "0.1.0";
 const COORDINATOR_DEFAULT = "https://ammunity-coordinator-production.up.railway.app";
@@ -78,8 +81,9 @@ Options:
   --home <dir>                   install home (default: ~/.ammunity/connector)
   --start                        (receive) run the daemon in the foreground after install
   --skip-deps                    don't run npm install
+  --no-service                   (receive) don't install a systemd/launchd service
   --non-interactive, -y          don't prompt; take values from flags/env
-  --uninstall                    remove the install home
+  --uninstall                    remove the install home (and its service, if any)
   --help, -h                     this help
   --version, -v                  print version
 
@@ -133,11 +137,17 @@ async function main() {
   console.log(`\n  Ammunity connector installer  ·  v${VERSION}\n`);
 
   if (args.uninstall) {
-    if (!existsSync(home)) return ok(`nothing to remove (${home} doesn't exist).`);
-    if (interactive && !(await confirm(`Remove the install home ${home}?`, false))) return log("cancelled.");
-    rmSync(home, { recursive: true, force: true });
-    ok(`removed ${home}.`);
-    warn("If you installed a service (systemd/launchd), remove it manually — service teardown lands with piece D.");
+    if (interactive && existsSync(home) && !(await confirm(`Remove the install home ${home} (and its service, if any)?`, false)))
+      return log("cancelled.");
+    // Stop + remove the service BEFORE deleting its files, so the service
+    // manager doesn't keep trying to restart a daemon whose code is gone.
+    uninstallService(log);
+    if (existsSync(home)) {
+      rmSync(home, { recursive: true, force: true });
+      ok(`removed ${home}.`);
+    } else {
+      ok(`nothing to remove (${home} doesn't exist).`);
+    }
     return;
   }
 
@@ -239,27 +249,58 @@ async function main() {
   ok("install complete.\n");
 
   if (role === "send" || role === "both") {
-    console.log("SEND — add the Ammunity tool to your MCP host. For Claude Code:\n");
+    console.log("SEND — sending is a one-line MCP setup specific to your agent host (this installer");
+    console.log("is for the RECEIVE daemon; sending needs no daemon). For Claude Code:\n");
     console.log(`  claude mcp add --transport http ammunity \\`);
     console.log(`    ${MCP_URL} \\`);
     console.log(`    --header "Authorization: Bearer <YOUR_AMMUNITY_KEY>"\n`);
     console.log(`  Your key is saved in ${join(home, ".env")} (AMMUNITY_AGENT_KEY) — paste it in place of`);
-    console.log("  <YOUR_AMMUNITY_KEY>. The dashboard's Connect panel issues ready-made snippets for all");
-    console.log("  hosts; full multi-platform send config from the installer arrives in a later batch.\n");
+    console.log("  <YOUR_AMMUNITY_KEY>. For the exact, key-filled command for your host (Claude Code,");
+    console.log("  Codex, Cursor, or OpenClaw), open your agent's page on the Ammunity dashboard.\n");
   }
 
   if (role === "receive" || role === "both") {
-    const runCmd = `node receiver/ws_client.js`;
-    console.log("RECEIVE — the daemon is installed. Per-OS service auto-start (systemd/launchd)");
-    console.log("arrives in the next batch; for now, run it like this:\n");
-    console.log(`  cd ${placedHome} && ${runCmd}\n`);
+    // --start: explicit foreground run (for watching/testing). Skips the
+    // service — a background service AND a foreground copy would be two
+    // daemons connecting on the same agent key.
     if (args.start) {
       log("starting the receiver in the foreground (Ctrl-C to stop)…\n");
       const child = spawn("node", ["receiver/ws_client.js"], { cwd: placedHome, stdio: "inherit" });
       child.on("exit", (code) => process.exit(code ?? 0));
       return; // hand the process over to the daemon
     }
-    console.log("  (or re-run this installer with --start to launch it in the foreground.)\n");
+
+    // Default: GENERATE + install + start a per-OS service so the receiver
+    // survives reboots. --no-service opts out and prints the manual command.
+    let serviced = false;
+    if (!args["no-service"]) {
+      const svc = installService(placedHome, log);
+      if (svc === null) {
+        warn(`no service manager for ${pre.os.label} yet (Windows service is a fast-follow) — run it manually below.`);
+      } else if (svc.ok) {
+        ok(`service installed and started (${svc.detail}) — it will restart on boot.`);
+        serviced = true;
+      } else if (svc.installed) {
+        warn(`service was generated but isn't active yet (${svc.detail}). Check it, or run it manually below.`);
+      } else {
+        warn(`couldn't install a service (${svc.detail}) — run it manually below.`);
+      }
+    }
+
+    console.log("");
+    console.log(`RECEIVE — the daemon is installed at ${placedHome}.\n`);
+    if (serviced) {
+      const logsHint =
+        process.platform === "darwin"
+          ? `tail -f ${join(placedHome, "logs", "receiver.log")}`
+          : `journalctl --user -u ammunity-receiver -f`;
+      console.log("It's running now as a background service. Follow its logs with:\n");
+      console.log(`  ${logsHint}\n`);
+    } else {
+      console.log("Run it in the foreground with:\n");
+      console.log(`  cd ${placedHome} && node receiver/ws_client.js\n`);
+      console.log("  (or re-run this installer with --start to launch it in the foreground.)\n");
+    }
   }
 }
 
